@@ -1,0 +1,177 @@
+function [D,N] = pursuitload
+% Inputs:
+%    .edf - EyeLink eye position data file (required)
+
+% Outputs:
+%    D - structure containing extracted and aligned data for every trial
+%    N - number of trials
+%                                             x^
+% Example: Pursuit task looks like (x vs time) |   /\
+%                                              |__/__\_________>
+%                                              |      \  /     time(ms)
+%                                              |       \/
+%
+% Dependency: El2mat.m, GetELmes.m, Autoregfiltinpart_ok.m, SignalDiff.m
+
+%------------- BEGIN CODE --------------
+
+%% GUI file select
+[filename,pathname] = uigetfile({'*.edf'},'Please choose the EDF file you want to load....'); %edf
+cd(pathname);
+
+if exist([filename(1:end-4) 'SavedVariablesoutput.mat'],'file') == 2 %change to .mat for files that havent been marked, SavedVariablesoutput for ones that have 
+    load([filename(1:end-4) 'SavedVariablesoutput.mat']); %change to .mat if not marked
+else
+
+    %% Loading eyelink parameters
+
+    % Imports data into structure X with:
+    % .sampledata
+    % .eventdata
+    % .mestimes: timestamp of every messages in .messages
+    % .messages: contains the message of every executed commands
+    % .preable
+    % .codes
+    XX=el2mat(filename);
+
+    % Load corresponding .mat file (experiment matlab variables)
+    load(sprintf('%s%s.mat', filename(1:end-4), 'SavedVariables'));
+
+    % MESSAGES = {'iTrial','target','blank1on'};
+    MESSAGES = {'iTrial','target', 'targmov1', 'targmov2', 'targoff','blankon', 'trialend'};
+
+    % Extract useful data from X.messages via function getELmes
+    % format: [mestime, messages]
+    [startTimes, ~] =       getELmes(XX, MESSAGES(1)); % trial start time
+    [targetOnTimes, ~] =    getELmes(XX, MESSAGES(2)); % time at which the target came on
+    [targ1movTimes, ~] =       getELmes(XX, MESSAGES(3)); % trial end time
+    [targ2movTimes, ~] =       getELmes(XX, MESSAGES(4)); % trial end time
+    [targoffTimes, ~] =       getELmes(XX, MESSAGES(5)); % trial end time
+    [blankOnTimes, ~] =       getELmes(XX, MESSAGES(6)); % trial end time
+    [trialendTimes, ~] =       getELmes(XX, MESSAGES(7)); % trial end time
+
+
+
+N=numTrials;
+  
+
+% figure();
+% hold on;
+% plot(D{1,1}.tarposy, 'r')
+% % plot(D{1,1}.tarposy2, 'b')
+% plot(D{1,1}.tarposy3, 'g');
+
+
+
+    %% Compute Basic Variables
+
+    for k = 1:numTrials
+        D{k}.filename = filename;
+       
+
+        % Timings
+        D{k}.good = 0; %initialize good(0) or bad(1) trials variable
+        D{k}.double = 0;%no double is 0, 1 is double saccade
+        D{k}.targeton = targetOnTimes(k)-startTimes(k); %target onset
+        D{k}.targ1mov = targ1movTimes(k)-startTimes(k); %blank onset
+        D{k}.targ2mov = targ2movTimes(k)-startTimes(k); %blank onset
+        D{k}.targoff = targoffTimes(k)-startTimes(k); %blank onset
+        D{k}.blankon = blankOnTimes(k)-startTimes(k); %blank onset
+        D{k}.trialend = trialendTimes(k)-startTimes(k); %blank onset
+        D{k}.ppdx = ppdx; %pixel per degree x
+        D{k}.ppdy = ppdy; %ppd y
+        D{k}.targetonx = targetPositionStart(k,1); %target x start position
+        D{k}.targetony = targetPositionStart(k,2); %target y start position
+        D{k}.prejumpx = targetPositionBeforeJump2(k,1); %target x position just before jump
+        D{k}.prejumpy = targetPositionBeforeJump2(k,2); %target y position just before jump
+        D{k}.postjumpx = targetPositionAfterJump2(k,1); %target x position just after jump
+        D{k}.postjumpy = targetPositionAfterJump2(k,2); %target y position just after jump
+        D{k}.tarsp1 = targetSpeed1(k,1); %target speed for 1st movement (in degrees per second
+        D{k}.centerx = centerWidth; % centre of screen x in pixels
+        D{k}.centery = centerHeight;
+        D{k}.tarposx = (targetposalltrials{1,k}(:,1)-D{1}.centerx)/D{1}.ppdx;% target x position throughout trial in frame rate in degrees
+        D{k}.tarposy = (D{1}.centery - targetposalltrials{1,k}(:,2))/D{1}.ppdy; % target y position throughout trial in frame rate in degrees
+        D{k}.ttime = targettimealltrials{1,k}(1,:)*1000'; % time of each frame above, converted to ms
+        D{k}.cond = conditionType; % 1=control, 2 = scotoma
+        D{k}.fixdur = durFixation; % duration of target static position at onset
+        D{k}.itidur = durITI; % duration of inter trial interval
+        D{k}.jumptime = secondJumpTiming; % time after 1st movement onset that the jump occured
+        D{k}.jumptocentre = secondJumpTowardsCenter; % did the jump go to center(1) or not(0)
+        D{k}.movetocentre = secondMovementTowardsCenter; % did the second movement move towards center (1) or not(0)
+        D{k}.movementDirection = movementDirection;% ramp 1 motion direction (deg)
+        D{k}.targeton = targetPositionStart; %ramp 1 initial target position
+        D{k}.tarsp2 = targetSpeed2(k,1); %ramp 2 target speed
+        D{k}.jump2dist = secondJumpDistance; %second jump distance 
+        D{k}.movement2Direction = movement2Direction; %second movement direction
+        D{k}.secondJumpTiming = secondJumpTiming; 
+
+        % Timestamps to extract eye position for each trial
+        stime = find(XX.sampledata(:,1)>=startTimes(k)); % start time
+        etime = find(XX.sampledata(:,1)<=blankOnTimes(k)); % end time
+        arrT = stime(1):etime(end); % timestamps array
+
+        % EyeLink Data
+        D{k}.sfr = getEyetrackerSampleRate(XX); % eyetracker sample rate
+        D{k}.t1 = (0:length(arrT)-1)+XX.sampledata(stime(1),1)-startTimes(k); % gives the timestamp in ms of the eye sample data from trial start
+       
+        D{k}.eyeXp=XX.sampledata(arrT,2); % eyeHorizontal position in pixels
+        D{k}.eyeYp=XX.sampledata(arrT,3); % eyeVertical position in pixels
+
+
+        % beta calibration correction
+        A_eye = [D{k}.eyeXp.*D{k}.eyeYp, D{k}.eyeYp.*D{k}.eyeYp, D{k}.eyeXp.*D{k}.eyeXp, D{k}.eyeYp, D{k}.eyeXp, ones(length(D{k}.eyeXp), 1)];
+        B_eye = A_eye*Beta;
+
+        % eye position corrected beta and converted into degrees 
+        D{k}.eyeX = (B_eye(:,2)-D{k}.centerx)/D{1}.ppdx;
+        D{k}.eyeY = (D{1}.centery - B_eye(:,1))/D{1}.ppdy;
+
+        % to check (original data without beta correction in degrees)
+        D{k}.eyeXold = (D{k}.eyeXp-D{1}.centerx)/D{1}.ppdx;
+        D{k}.eyeYold = (D{1}.centery - D{k}.eyeYp)/D{1}.ppdy;
+
+        %remove big numbers because they seem to mess things up
+        D{k}.eyeX(D{k}.eyeX>1000) = NaN;
+        D{k}.eyeX(D{k}.eyeX<-1000) = NaN;
+        D{k}.eyeY(D{k}.eyeY>1000) = NaN;
+        D{k}.eyeY(D{k}.eyeY<-1000) = NaN;
+        D{k}.eyeXold(D{k}.eyeXold>1000) = NaN;
+        D{k}.eyeXold(D{k}.eyeXold<-1000) = NaN;
+        D{k}.eyeYold(D{k}.eyeYold>1000) = NaN;
+        D{k}.eyeYold(D{k}.eyeYold<-1000) = NaN;
+
+
+        % Info to process eye position signals
+        D{k}.cutoffFreq_Eye = 50; % cut-off frequency for eye movements filtering
+        D{k}.win = 0.01; % time window (1/2 width) for differentiation
+        
+
+        % Filter and differentiate
+        D{k}.eyeX = autoregfiltinpart_ok(D{k}.sfr,D{k}.cutoffFreq_Eye,D{k}.eyeX); % Filtered X
+        D{k}.eyeY = autoregfiltinpart_ok(D{k}.sfr,D{k}.cutoffFreq_Eye,D{k}.eyeY); % Filtered Y
+        D{k}.eyeXv = GRAIdiff(1/D{k}.sfr,D{k}.win,D{k}.eyeX); % X velocity
+        D{k}.eyeYv = GRAIdiff(1/D{k}.sfr,D{k}.win,D{k}.eyeY); % Y velocity
+        D{k}.eyeVv = sqrt(D{k}.eyeXv.^2 + D{k}.eyeYv.^2); % Net velocity
+        D{k}.eyeXa = GRAIdiff(1/D{k}.sfr,D{k}.win,D{k}.eyeXv);% X acceleration
+        D{k}.eyeYa = GRAIdiff(1/D{k}.sfr,D{k}.win,D{k}.eyeYv); % Y acceleration
+        D{k}.eyeVa = sqrt(D{k}.eyeXa.^2 + D{k}.eyeYa.^2); % Net acceleration
+
+        % Filter and differentiate old data just to check for offsets
+        D{k}.eyeXold = autoregfiltinpart_ok(D{k}.sfr,D{k}.cutoffFreq_Eye,D{k}.eyeXold); % Filtered X
+        D{k}.eyeYold = autoregfiltinpart_ok(D{k}.sfr,D{k}.cutoffFreq_Eye,D{k}.eyeYold); % Filtered Y
+        
+
+        %convert target position iinto velocity
+        % D{k}.t2 = (arrT-stime(1))*1000/frameRate; % gives the timestamp in ms of the original target sample data from trial start [ms] - 120Hz sampling frequency
+        D{k}.tarposx3 = interp1(D{k}.ttime, D{k}.tarposx, D{k}.t1, 'linear', 'extrap'); % linear interpolation (upsampling) of target position x
+        D{k}.tarposy3 = interp1(D{k}.ttime, D{k}.tarposy, D{k}.t1, 'linear', 'extrap'); % linear interpolation (upsampling) of target position y
+        D{k}.tarxv = GRAIdiff(1/D{k}.sfr,D{k}.win,D{k}.tarposx3); % X velocity
+        D{k}.taryv = GRAIdiff(1/D{k}.sfr,D{k}.win,D{k}.tarposy3); % Y velocity
+        D{k}.tarvv = sqrt(D{k}.tarxv.^2 + D{k}.taryv.^2); % Y velocity
+
+        p = target_visible(D{k}.eyeX, D{k}.eyeY, D{k}.tarposx3, D{k}.tarposy3, D{k}.cond);
+        D{k}.visible = p(:,1);
+    end
+end
+end
+%------------- END OF CODE --------------
