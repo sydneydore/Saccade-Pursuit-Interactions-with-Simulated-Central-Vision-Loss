@@ -1,0 +1,83 @@
+Builds the GUI for data marking. This is the file that runs every
+% other file/function
+%
+% Inputs: caipursuitload.m's input
+%    .edf - EyeLink eye position data file
+%    .txt - NDI Optotrak marker (hand) position data file (TAB separated)
+%    .txt - NDI Odau TTL signal data file (TAB separated)
+%
+%
+% Outputs:
+%
+%
+% Example: 
+%
+% Dependency: caipursuitload.m, caipursuitreplot.m, CAIspon.m, CAIeyeon.m,
+%             CAIfixon.m, CAIhandon.m
+% Subfunctions: -
+% MAT-files required: -
+
+% Notes: pursuit experiment
+
+% Author: Dr. Gunnar Blohm
+% Last Revision by: William Le
+% 
+% email address:  gunnar.blohm@queensu.ca
+% Website: http://www.compneurosci.com/
+% Date; Last revision: 23.03.2016
+
+%------------- BEGIN CODE --------------
+clear
+warning off
+
+%% Create figure
+f = figure('Name','Pursuit Sydney analysis',...
+    'Units','normalized','Position',[.01 .01 .98 .94],'toolbar',...
+    'none','NumberTitle','off');
+
+% create axes
+ylab = {'Eye pos (deg)','Eye Velo (deg/s)'};
+for i = 1:2,
+    ax(i) = axes('Units','normalized','Position',[.05 1.02-i*.39 .5 .35]);
+    ylabel(ylab{i});
+end
+xlabel('Time (ms)')
+ax(3) = axes('Units','normalized','Position',[.48 .35 .6 .6],...
+    'PlotBoxAspectRatio',[1 1 1]);
+xlabel('Horizontal eye position (deg)')
+ylabel('Vertical eye position (deg)')
+
+
+%% Initialize basic variables
+trn = 1;
+
+%% Add menu items
+gm(1) = uimenu('label','        caisydneypursuit');
+gm(2) = uimenu(gm(1),'label','Load block of data...','callback','[D,N]=caisydneypursuitload;trn=1;caisydneypursuitreplot');
+gm(3) = uimenu(gm(1),'label','Extract parameters','callback','caisydneypursuitextract');
+
+%% Add buttons & controls
+% First row of buttons
+h.trialGood = uicontrol('Style', 'pushbutton', 'String', 'Trial GOOD', 'foregroundcolor', 'g',...
+    'units','normalized','Position', [0.6 0.25 0.05 0.025],'Visible','off',...
+    'Callback','D{trn}.good=rem(D{trn}.good+1,2);CAIGoodBadToggle');
+h.double = uicontrol('Style', 'pushbutton', 'String', 'no double', 'foregroundcolor', 'g',...
+    'units','normalized','Position', [0.65 0.25 0.05 0.025],'Visible','off',...
+    'Callback','D{trn}.double=rem(D{trn}.double+1,2);CAIdoublesaccade');
+h.nextTrial = uicontrol('Style', 'pushbutton', 'String', 'Next trial','Visible','off',...
+    'units','normalized','Position', [0.75 0.25 0.05 0.025], 'Callback', 'trn=trn+1;caisydneypursuitreplot');
+h.previousTrial = uicontrol('Style', 'pushbutton', 'String', 'Previous trial','Visible','off',...
+    'units','normalized','Position', [0.7 0.25 0.05 0.025], 'Callback', 'trn=trn-1;caisydneypursuitreplot');
+h.goToTrial = uicontrol('Style','text','String','Go to trial #','Visible','off',...
+    'units','normalized','Position', [0.825 0.25 0.05 0.025]);
+h.edit = uicontrol('Style','edit','Visible','off',...
+    'units','normalized','Position', [0.875 0.25 0.025 0.025]);
+h.go = uicontrol('Style','pushbutton','String','Go','Visible','off',...
+    'units','normalized','Position', [0.9 0.25 0.025 0.025], 'Callback',...
+    'trn=str2num(get(h.edit,''String''));caisydneypursuitreplot');
+
+% Second row of buttons
+h.spOn = uicontrol('Style', 'pushbutton', 'String', 'Smooth pursuit onset','Visible','off',...
+    'units','normalized','Position', [0.6 0.15 0.1 0.025], 'Callback', 'CAIspon');
+
+
