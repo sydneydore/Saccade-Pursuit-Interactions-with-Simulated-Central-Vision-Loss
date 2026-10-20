@@ -1,0 +1,196 @@
+Draws the graphs to pre-analyse data.
+%
+% Inputs:
+%    D - structure containing extracted and aligned data for every trial
+%        (from caipursuitload.m)
+%    N - number of trials (from caipursuitload.m)
+%
+% Outputs:
+%    some graphs
+%
+% Example: indicator legend: - solid -> beginning
+%                            - dashed -> end
+%
+%                            - blue -> targetOn
+%                            - red -> fixation
+%                            - magenta -> hand at target (default same time as fixation)
+%
+% Dependency: CAIGoodBadToggle.m, CAIdetectSaccades.m, VectGroup.m
+% Subfunctions: -
+% MAT-files required: -
+%
+% See also: caisydneypursuitload.m
+% Notes: markerSelection = default,custom or auto
+%
+%        Hand position is marker 1 and 2 by default
+%        marker 1 [x y z] is column [1 2 3] in the data file
+%        marker 2 [x y z] is column [4 5 6] in the data file
+%        marker 3 [x y z] is column [7 8 9] in the data file
+%        etc.
+%        To check, go look at D{}.handraw or the original data file (.txt)
+
+% Author: Dr. Gunnar Blohm
+% Last Revision by: William Le
+% 
+% email address:  gunnar.blohm@queensu.ca
+% Website: http://www.compneurosci.com/
+
+% revision email: williamtrung.le@gmail.com
+% Date; Last revision: 29.03.2016
+
+%------------- BEGIN CODE --------------
+if trn < 1, trn = 1; end
+if trn > N, trn = N; end
+
+
+CAIGoodBadToggle;
+%[pathstr, filestr, ext, versn] = fileparts(FILES{trn});
+set(f,'name',['CAI pursuit' ' trial # ' num2str(trn)]);
+
+%% Hyperparameters
+accThreshold =          500; %m/s^2 
+
+%% Plot time-dependent data
+
+% First figure: Eye x/y position (eyeX, eyeZ) in function of time for each trial (trn)
+axes(ax(1));
+cla; hold on;
+
+p = target_visible(D{trn}.eyeX, D{trn}.eyeY, D{trn}.tarposx3, D{trn}.tarposy3, D{trn}.cond); 
+%tvis = D{trn}.visible;
+tvis = p'; 
+
+tvis = double(tvis);
+tvis(tvis(:,1) ==0,1)=-35; %0 = target not visible
+tvis(tvis(:,1) ==1,1) = 35; %1 = target visible
+fill(D{trn}.t1, tvis,[.7 .7 .7]); %grey background means target is not visible
+
+
+plot(D{trn}.t1, D{trn}.eyeX, 'r'); %plot horizontal eye position
+plot(D{trn}.t1, D{trn}.eyeY, 'g'); %plot vertical eye position
+
+
+
+plot(D{trn}.ttime,D{trn}.tarposx, 'r:') % target horizontal position
+plot(D{trn}.ttime,D{trn}.tarposy, 'g:') % target vertical position
+plot([D{trn}.targ1mov D{trn}.targ1mov],[-300 300], 'b', 'LineWidth',2);
+plot([D{trn}.targ2mov D{trn}.targ2mov],[-300 300], 'b', 'LineWidth',2);
+plot([D{trn}.targoff-300 D{trn}.targoff-300],[-300 300], 'm','LineWidth',2);
+plot([D{trn}.targoff-1000 D{trn}.targoff-1000],[-300 300], 'm','LineWidth',2);
+plot([D{trn}.targ2mov + 90 D{trn}.targ2mov + 90],[-300 300], 'r', 'LineWidth',1);
+plot([D{trn}.targ2mov-50 D{trn}.targ2mov-50],[-300 300], 'm','LineWidth',2);
+plot([D{trn}.targ2mov-750 D{trn}.targ2mov-750],[-300 300], 'm','LineWidth',2);
+plot([D{trn}.targoff D{trn}.targoff],[-300 300], 'b'); 
+plot([D{trn}.blankon D{trn}.blankon],[-300 300], 'k'); 
+plot([D{trn}.blankon+750 D{trn}.blankon+750],[-300 300], 'k'); % this is the trial end
+set(ax(1),'xlim',[D{trn}.t1(501) D{trn}.t1(end)],'ylim',[-35 35]); %set min/max of x/y axis
+
+D{trn}.trn = trn;
+
+% Second figure: Eye x/y velocity (eyeXv, eyeZv)
+axes(ax(2));
+cla; hold on;
+fill(D{trn}.t1, tvis,[.7 .7 .7]); %grey is when target is not visible 
+plot(D{trn}.t1, D{trn}.eyeXv, 'r'); %plot horizontal eye velocity
+plot(D{trn}.t1, D{trn}.eyeYv, 'g'); %plot vertical eye velocity
+plot(D{trn}.t1, D{trn}.eyeVv, 'b'); %plot vectorial eye velocity
+plot(D{trn}.t1,D{trn}.tarvv, 'k:') % target
+plot([D{trn}.targ1mov D{trn}.targ1mov],[-300 300], 'b', 'LineWidth',2);
+plot([D{trn}.targoff-300 D{trn}.targoff-300],[-300 300], 'b','LineWidth',2);
+plot([D{trn}.blankon D{trn}.blankon],[-300 300], 'k');
+set(ax(2),'xlim',[D{trn}.t1(501) D{trn}.t1(end)],'ylim',[-30 30])
+
+CAIdetectSaccades;
+
+
+% pursuit onset
+if ~isfield(D{trn},'pursuitOn'),
+    arrB = round((D{trn}.targ1mov-500)*D{trn}.sfr/1000):round(D{trn}.targ1mov*D{trn}.sfr/1000); %baseline
+    velB = std(D{trn}.eyeVvws(arrB));
+    arrP = round((D{trn}.targ1mov)*D{trn}.sfr/1000):round((D{trn}.targ1mov+1000)*D{trn}.sfr/1000);
+    indP = find(D{trn}.eyeVvws(arrP)>3*velB);
+    [posP,nP]=CAIgroup(indP,2,150);
+    if ~isempty(posP)
+    indPon = indP(posP(1));
+    arrR = round((D{trn}.targ1mov)*D{trn}.sfr/1000)+indPon + (1:round(100*D{trn}.sfr/1000));
+    b = robustfit(D{trn}.t1(arrR), D{trn}.eyeVvws(arrR));
+    D{trn}.pursuitOn = -b(1)/b(2);
+    D{trn}.pursuitACC = b(2)*1000;
+
+    end
+end
+if isfield(D{trn},'pursuitOn')
+for i =1:2, axes(ax(i)); hSPONline(i)=plot(D{trn}.pursuitOn*[1 1],[-300 300], 'k:', 'LineWidth',2); end;
+end
+
+
+
+%% Plot spatial data
+
+axes(ax(3));
+cla; hold on;
+
+% --- Eye window ---
+startIdx = round(D{trn}.targ1mov);
+endIdx   = round(D{trn}.targoff);
+
+x_eye = D{trn}.eyeX(startIdx:endIdx);
+y_eye = D{trn}.eyeY(startIdx:endIdx);
+
+% --- Target handling (robust) ---
+targLen = length(D{trn}.tarposx);
+
+if startIdx < targLen
+    % start aligned, extend to available data
+    x_targ = D{trn}.tarposx(startIdx:end);
+    y_targ = D{trn}.tarposy(startIdx:end);
+else
+    % fallback: just use full target
+    x_targ = D{trn}.tarposx;
+    y_targ = D{trn}.tarposy;
+end
+
+% --- Downsampling ---
+dt_ms = 10;
+step = max(1, round(D{trn}.sfr * dt_ms / 1000));
+
+idx_eye = 1:step:length(x_eye);
+idx_targ = 1:step:length(x_targ);
+
+% --- Plot eye ---
+plot(x_eye(idx_eye), y_eye(idx_eye), '.', 'Color', 'b');
+
+% --- Plot target (DO NOT overcomplicate this) ---
+plot(D{trn}.tarposx, D{trn}.tarposy, 'k:');
+
+% --- Start / end markers ---
+xnan = rmmissing(x_eye);
+ynan = rmmissing(y_eye);
+
+plot(xnan(1), ynan(1), '+', 'Color', 'b', 'MarkerSize', 10);
+plot(xnan(end), ynan(end), 'o', 'Color', 'k', 'MarkerFaceColor', 'k');
+
+% --- Saccade marker ---
+indSacc = find(D{trn}.saccs(:,1) > D{trn}.targ2mov, 1, 'first');
+if ~isempty(indSacc)
+    plot(D{trn}.eyeX(D{trn}.saccs(indSacc,1)), ...
+         D{trn}.eyeY(D{trn}.saccs(indSacc,1)), ...
+         'o', 'Color', 'r');
+end
+
+% --- Target step marker ---
+if D{trn}.targ2mov <= length(D{trn}.eyeX)
+    plot(D{trn}.eyeX(D{trn}.targ2mov), ...
+         D{trn}.eyeY(D{trn}.targ2mov), ...
+         '|', 'Color', 'k', 'LineWidth', 2);
+end
+
+% --- Axes ---
+set(ax(3), 'xlim', [-25 25], 'ylim', [-25 25]);
+
+%% finalize
+sstr = fieldnames(h);
+for i = 1:length(sstr),
+    set(eval(['h.' sstr{i}]),'visible','on');
+end
+%------------- END OF CODE --------------
