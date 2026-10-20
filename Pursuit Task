@@ -1,0 +1,441 @@
+warning off all
+clear all
+
+conditionType = input('Please input the scotoma type: \n 1: control\n 2: scotoma\n');
+conditionSet{1} = 'control';
+conditionSet{2} = 'scotoma';
+while (conditionType~=1) && (conditionType~=2)
+    conditionType = input('you should input 1 or 2: ');
+end
+
+edfFile = input('Enter tracker EDF file name(1 to 8 letters or numbers): ','s');
+time = clock; %time = [year month day hour minute seconds]
+filename = sprintf( '%s%s.mat', edfFile, 'SavedVariables');
+pathname = getPathname(mfilename('fullpath'), mfilename);
+rawDataPathname = [pathname 'RawData\'];
+
+%% Global parameters
+
+distToScreen = 62; % cm
+wideScreen = 20.5*2.54; % cm
+heightScreen = 11.5*2.54; % cm
+
+BUTTONEVENT = 25; % Keycode related, if different from 25 it creates problems
+% press and release codes as follows:
+% white (centre button) press is 4112, white release is 4096press, release code for button 5 which is the biggest one
+% red (right) = 514 and 512
+% green (left) = 2056 and 2048
+% yellow (up) = 257 and 256
+% blue (down) = 1028 and 1024
+KEYCODE = [2056,514];% left and right button press codes
+ALLKEYCODES = [4112, 514, 2056, 257, 1028];
+
+%% Psychotoolbox Init
+% minimize extraneous warnings.
+oldLevel = Screen('Preference', 'VisualDebugLevel', 1); %level 1: error only
+oldEnableFlag = Screen('Preference', 'SuppressAllWarnings', 1);
+Screen('Preference', 'SkipSyncTests', 1);
+% Find out how many screens and use largest Screen number.
+whichScreen = max(Screen('Screens'));
+
+try
+    % Open a new window.
+    [ winPtr, windowRect ] = Screen('OpenWindow', whichScreen);
+%     [ winPtr, windowRect ] = Screen('OpenWindow', whichScreen, [], [], [], [], [], 10); %enable multisample for anti-aliasing
+     
+    frameRate = round(FrameRate(winPtr));
+    flipInterval = Screen('GetFlipInterval',winPtr);
+    centerWidth = windowRect(RectRight)/2;
+    centerHeight = windowRect(RectBottom)/2;
+    ppdx = atan2(wideScreen/2,distToScreen)*180/pi;%degree
+    ppdx = windowRect(RectRight)/2/ppdx; %pixels/degree x
+    ppdy = atan2(heightScreen/2,distToScreen)*180/pi;%degree
+    ppdy = windowRect(RectBottom)/2/ppdy; %pixels/degree
+    
+    % Set colors.
+    black = BlackIndex(winPtr);
+    white = WhiteIndex(winPtr);
+    red = [255 0 0];
+    grey = 0.4 * [255 255 255];
+    darkGrey = 0.3 * [255 255 255];
+    
+    % Enable alpha blending (for masks)
+    Screen('BlendFunction', winPtr, GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    
+    Screen('FillRect', winPtr, grey, windowRect);
+    Screen('Flip',winPtr);
+    HideCursor;
+
+    %% Experiment parameters %%%%%%%%
+
+%     [scotoma_new2, ~, alphaChannel] = imread('scotoma_new2.png');
+%     scotomaImage2 = NaN(size(scotoma_new2, 1), size(scotoma_new2, 2), 4);
+%     scotomaImage2(:,:,1:3) = scotoma_new2;
+%     scotomaImage2(:,:,4) = alphaChannel;
+%     scotomaTexture = Screen('MakeTexture', winPtr, scotomaImage2);
+
+
+    [scotomaImage, ~, alphaChannel] = imread('scotomaImage.png');
+    scotomaImage2 = NaN(size(scotomaImage, 1), size(scotomaImage, 2), 4);
+    scotomaImage2(:,:,1:3) = scotomaImage;
+    scotomaImage2(:,:,4) = alphaChannel;
+    scotomaTexture = Screen('MakeTexture', winPtr, scotomaImage2);
+
+    numTrials = 30;
+    nbDots = 15; % for scotoma calibration
+
+    scotomaColor = red;
+    scotomaDiameterDeg = 5;
+    scotomaDiameter = scotomaDiameterDeg*ppdx;
+
+    %parameters for fixation
+    center = [centerWidth, centerHeight];
+    xFixation = centerWidth;
+    yFixation = centerHeight;
+    durFixation = 1000; % ms
+    diamFixationTarget = 0.5; % degree
+    diamFixationControl = 0.5; % degree
+
+    durITI = 750; % ms
+
+    %parameters for target
+    targetDuration = 1000; %ms
+    targetColor = grey;
+    targetDiameterDeg = 0.5;
+    targetDiameterPx = targetDiameterDeg * ppdx;
+    targetPositionStartIdx = randi(12, [numTrials, 1]); %idx
+    targetPositionStartAngle = 2 * pi * targetPositionStartIdx / 12; %rad
+    targetPositionStart =  center + 8 * ppdx * [cos(targetPositionStartAngle), sin(targetPositionStartAngle)];
+    targetPossibleSpeeds = 5:15; % deg per sec
+
+    targetSpeed1 = targetPossibleSpeeds(randi(length(targetPossibleSpeeds), [numTrials, 1]))'; % deg per sec
+    targetSpeed2 = targetPossibleSpeeds(randi(length(targetPossibleSpeeds), [numTrials, 1]))';
+    targetSpeed1PxPerSec = targetSpeed1 * ppdx;
+    targetSpeed2PxPerSec = targetSpeed2 * ppdx;
+
+    movementDirection = (center - targetPositionStart) ./ vecnorm(center - targetPositionStart, 2, 2);
+    targetPositionAfterJump = targetPositionStart - movementDirection .* targetSpeed1PxPerSec * 0.2; %target should be at start position after 200ms
+    
+    secondJumpTiming = 900 + 100 * randi(6, [numTrials, 1]); %ms
+    secondJumpPossibleDistance = 4:6; %deg
+    secondJumpDistance = secondJumpPossibleDistance(randi(length(secondJumpPossibleDistance), [numTrials, 1]))'; %degrees
+    secondJumpTowardsCenter = rand([numTrials, 1]) > 0.5;
+    secondMovementTowardsCenter = rand([numTrials, 1]) > 0.5;
+    secondMovementDirection = randi(2, [numTrials, 1])-2;
+
+    targetPositionBeforeJump2 = targetPositionAfterJump + (targetSpeed1PxPerSec .* secondJumpTiming/1000) .* movementDirection;
+
+    jump2Direction = (secondJumpTowardsCenter .* movementDirection) + (~secondJumpTowardsCenter .* (-movementDirection));
+    targetPositionAfterJump2 = targetPositionBeforeJump2 + jump2Direction .* ppdx .* secondJumpDistance;
+
+    secondMovementDuration = 1500; %ms
+
+    movement2Direction = (secondMovementTowardsCenter .* movementDirection) + (~secondMovementTowardsCenter .* (-movementDirection));
+    % targetPositionAtEnd = targetPositionAfterJump2 + movement2Direction .* targetSpeed2PxPerSec * secondMovementDuration/1000;
+   targetPositionAtEnd = targetPositionAfterJump2 + movementDirection .* (targetSpeed1PxPerSec + secondMovementDirection.*targetSpeed2PxPerSec) * secondMovementDuration/1000;
+       
+    %% Eyelink initialization and configuration %%%%%%%%%%
+    
+    if Eyelink('initialize','PsychEyelinkDispatchCallback')
+        fprintf('Eyelink failed initialization');
+        Screen('CloseAll');
+        return
+    end
+    HideCursor;
+    el = EyelinkInitDefaults(winPtr);
+    % tell the Eyelink Host the coordinate space
+    if Eyelink('IsConnected') ~= el.notconnected
+        Eyelink('Command', 'screen_pixel_coords = %d %d %d %d', 0, 0, windowRect(RectRight), windowRect(RectBottom));
+    end
+    Eyelink('Command','calibration_type = HV9');
+    Eyelink('Command','file_event_filter = LEFT,RIGHT, FIXATION, BLINK, MESSAGE, BUTTON, SACCADE, INPUT');%sets which events will be written to the EDF file.
+    Eyelink('Command','link_event_filter = LEFT,RIGHT, FIXATION, BLINK, MESSAGE, BUTTON, SACCADE, INPUT');%sets which types of events will be sent through link
+    % configure eyelink to send raw data
+    status=Eyelink('command','link_sample_data = LEFT,RIGHT,GAZE,AREA,GAZERES,HREF,PUPIL,STATUS,INPUT,BUTTON,HMARKER');
+    if status~=0
+        disp('link_sample_data error')
+    end
+    
+    status=Eyelink('command','file_sample_data = LEFT,RIGHT,GAZE,AREA,GAZERES,HREF,PUPIL,STATUS,INPUT,BUTTON,HMARKER');
+    if status~=0
+        disp('file_sample_data error')
+    end
+    
+    status=Eyelink('command','inputword_is_window = ON');
+    if status~=0
+        disp('inputword_is_window error')
+    end
+    
+    if isempty(edfFile)
+        edfFile = 'data';
+    end
+    Eyelink('openfile', edfFile);
+
+    %% Custom calibration parameters
+    
+    el.calibrationtargetsize = 2.5*0.66;
+    el.calibrationtargetwidth = 1*0.66;
+    el.ppdx = ppdx;
+    
+    %Calibration grid
+    Eyelink('command', 'calibration_area_proportion 0.8, 0.8'); 
+    Eyelink('command', 'validation_area_proportion 0.8, 0.8');
+
+       
+    %% Calibrating the eye tracker %%%%%%%%%
+    
+    el.backgroundcolour = 204;
+    el.foregroundcolour = 0;
+
+    el.window = winPtr;
+    status = Eyelink('isconnected');
+    if status == 0 %if not connected
+        Eyelink('closefile');
+        Eyelink('shutdown');
+        
+        Screen('CloseAll');
+        ShowCursor;
+        % restore Screen preference settings.
+        Screen('Preference', 'VisualDebugLevel', oldLevel);
+        Screen('Preference', 'SuppressAllWarnings', oldEnableFlag);
+        return;
+    end
+    
+    el.callback = '';
+    error = EyelinkDoTrackerSetup(el, el.ENTER_KEY); % This calls the calibration, error: Screen( 'FillRect',  el.window, el.backgroundcolour );	% clear_cal_display()
+    
+    if error ~= 0
+        fprintf('eye tracker setup error = %d\n',error);
+    end
+    
+    % end of calibration %
+    
+    % Set Background color
+    locFixation = round(CenterRectOnPoint( [0 0 diamFixationTarget*ppdx diamFixationTarget*ppdy],xFixation,yFixation));
+    locFixation2 = round(CenterRectOnPoint( [0 0 diamFixationControl*ppdx diamFixationControl*ppdy],xFixation,yFixation));
+    Eyelink('command','draw_filled_box %d %d %d %d %d',windowRect(RectLeft),windowRect(RectTop),windowRect(RectRight),windowRect(RectBottom),0);
+    Eyelink('command','draw_filled_box %d %d %d %d %d',locFixation2(RectLeft),locFixation2(RectTop),locFixation2(RectRight),locFixation2(RectBottom),10);
+    
+    Screen('FillRect',winPtr,white,windowRect);
+    Screen('Flip',winPtr); numRandDTPos = 0;
+    
+    Eyelink('StartRecording');
+    
+    eye_used = Eyelink('EyeAvailable');
+    
+    switch eye_used
+        case el.BINOCULAR
+            error('tracker indicates binocular');
+        case el.LEFT_EYE
+            error('tracker indicates left eye');
+        case el.RIGHT_EYE
+            disp('tracker indicates right eye');
+        case -1
+            error('eyeavailable returned -1');
+        otherwise
+            error('unexpected result from eyeavailable');
+    end
+    eyeIndex = el.RIGHT_EYE & eye_used;
+    time2 = Eyelink('TrackerTime');
+    
+    %% Scotoma 2nd Calibration %%
+    
+     Beta = ScotomaCalibration(winPtr, windowRect, ppdx, nbDots);
+    
+    %% Actual Experiment Begins %%%%%%%%%%%%%%%%
+
+    numCorrect = 0;
+    targetPositionForAllTrials = {}; %will record target positions for each trial
+    targetpos1alltrials = [];
+    targetpos2alltrials = [];
+    for iTrial = 1:numTrials 
+        
+        targetPositionForTrial = []; % will record target positions for each frame
+        
+        Eyelink('message',strcat('iTrial ',num2str(iTrial)));
+        Eyelink('command','draw_text %d %d %d %d',windowRect(RectRight)-100, windowRect(RectBottom)-100, 10, iTrial);
+
+        % SHOW TARGET
+        targetStart = targetPositionStart(iTrial, :);
+        targetRec = CenterRectOnPoint([0 0 targetDiameterPx, targetDiameterPx], targetStart(1), targetStart(2));
+        Screen('FillOval', winPtr, targetColor, targetRec);
+        Screen('Flip', winPtr);
+        Eyelink('message','target');
+        ttime0 = GetSecs; % trial start time
+        ttime = GetSecs - ttime0; % Screen Flip time log
+        tpos = [];
+        tpos = [tpos; targetStart]; % Target position log
+        
+        if (conditionType == 2)
+            time = GetSecs();
+            time2 = GetSecs();
+            while (time2 - time < targetDuration/1000)
+                isBlinking = false;
+                Screen('FillOval', winPtr, targetColor, targetRec);
+                DisplayScotoma2;
+                time2 = GetSecs();
+                ttime(end+1)=GetSecs - ttime0;
+                tpos = [tpos; targetStart];
+        end
+        else
+            WaitSecs(targetDuration/1000);
+            ttime(end+1)=GetSecs - ttime0;
+            tpos = [tpos; targetStart];
+        end
+        
+        targetPositionForTrial = repmat(targetStart, floor(targetDuration/1000/flipInterval), 1);
+
+        % TARGET JUMPS OUTWARDS AND MOVE TOWARDS CENTER
+        targposmov1 = [];
+        targetNewStart = targetPositionAfterJump(iTrial, :);
+        targetEnd = targetPositionBeforeJump2(iTrial, :);
+        movementDuration1 = norm(targetEnd - targetNewStart) / targetSpeed1PxPerSec(iTrial);
+        movementFrames1 = movementDuration1 / flipInterval;
+        frameNb = 1;
+        time = 0;
+        Eyelink('message','targmov1');
+        time = GetSecs();
+        time2 = GetSecs();
+        while (time2 - time < movementDuration1)
+            t = time2 - time;
+        % while frameNb < (movementFrames + 1)
+        %     t = (frameNb - 1) / movementFrames;
+            targetPosition = targetNewStart + (targetEnd - targetNewStart) * t;
+            targetRec = CenterRectOnPoint([0 0 targetDiameterPx, targetDiameterPx], targetPosition(1), targetPosition(2));
+            Screen('FillOval', winPtr, targetColor, targetRec);
+            Eyelink('message','tarframe'); % I think this message should come after the Screen Flip
+        
+            if conditionType == 2
+                DisplayScotoma2;
+            else
+                Screen('Flip', winPtr);
+            end
+       
+            ttime(end+1)=GetSecs - ttime0;
+            tpos = [tpos; targetPosition];
+            frameNb = frameNb + 1;
+            targetPositionForTrial = [targetPositionForTrial; targetPosition];
+            targposmov1 = [targposmov1; targetPosition];
+            time2 = GetSecs();
+        end
+        
+        % TARGET JUMPING AND MOVING AGAIN
+        targposmov2=[];
+        targetNewStart = targetPositionAfterJump2(iTrial, :);
+        targetEnd = targetPositionAtEnd(iTrial, :);
+        movementDuration2 = secondMovementDuration / 1000;
+        movementFrames2 = movementDuration2 / flipInterval;
+        frameNb = 1;
+        time = 0;
+        Eyelink('message','targmov2');
+        time = GetSecs();
+        time2 = GetSecs();
+        while (time2 - time < movementDuration2)
+            t = time2 - time;
+        % while frameNb < (movementFrames + 1)
+        %     t = (frameNb - 1) / movementFrames;
+            targetPosition = targetNewStart + (targetEnd - targetNewStart) * t;
+            targetRec = CenterRectOnPoint([0 0 targetDiameterPx, targetDiameterPx], targetPosition(1), targetPosition(2));
+            Screen('FillOval', winPtr, targetColor, targetRec);
+            Eyelink('message','tarframe');
+            
+            if conditionType == 2
+                DisplayScotoma2;
+            else
+                Screen('Flip', winPtr);
+            end
+            ttime(end+1)=GetSecs - ttime0;
+            tpos = [tpos; targetPosition];
+            frameNb = frameNb + 1;
+%             time = time + flipInterval;
+            targetPositionForTrial = [targetPositionForTrial; targetPosition];
+            targposmov2 = [targposmov2; targetPosition];
+            time2 = GetSecs();
+        end
+
+         Eyelink('message','targoff');
+        % blank1on frame
+        Screen('FillRect',winPtr,white,windowRect);
+        vbl(iTrial,3) = Screen('Flip',winPtr);
+        % Eyelink('message','blank1on');
+        Eyelink('message','blankon');
+        if (conditionType == 2)
+            time = GetSecs();
+            time2 = GetSecs();
+            while (time2 - time < durITI/1000)
+                DisplayScotoma2;
+                time2 = GetSecs();
+                ttime(end+1)=GetSecs - ttime0;
+                tpos = [tpos; targetPosition];
+            end
+        else
+            WaitSecs(durITI/1000);
+            ttime(end+1)=GetSecs - ttime0;
+            tpos = [tpos; targetPosition];
+        end
+        Eyelink('message','trialend');    
+        targetPositionForTrial = [targetPositionForTrial; repmat([NaN, NaN], floor(durITI/1000/flipInterval), 1)]; %no target during ITI 
+        targetPositionForAllTrials{iTrial} = targetPositionForTrial; %save target positions for this trial
+        targetpos1alltrials{iTrial} = targposmov1;
+        targetpos2alltrials{iTrial} = targposmov2;
+        targettimealltrials{iTrial} = ttime;
+        targetposalltrials{iTrial} = tpos;
+
+    end
+    
+
+    Eyelink('StopRecording');
+    Eyelink('command', 'set_idle_mode');
+    WaitSecs(0.5);
+    Eyelink('CloseFile');
+    
+    %% Say Thank You %%
+    
+    temp=([200 200 200])./100;
+    for i = 1:100 % fade to grey algorithm
+        Screen('FillRect',winPtr,round([0 0 0]+(temp*i)),windowRect);
+        Screen('Flip',winPtr);
+    end
+    
+%     ttext='Please rest.';
+%     tsize=Screen('TextBounds', winPtr, ttext);twidth=tsize(3);
+%     Screen('DrawText',winPtr,ttext,centerWidth-(twidth/2),centerHeight+60,[0 0 255]);
+%     Screen('TextSize',winPtr,40);
+%     Screen('flip',winPtr);
+    
+    pause(3);
+        
+    % restore Screen preference settings
+    Screen('CloseAll');
+    ShowCursor;
+    Screen('Preference', 'VisualDebugLevel', oldLevel);
+    Screen('Preference', 'SuppressAllWarnings', oldEnableFlag);
+    
+    %% Save Matlab variables
+    save([rawDataPathname filename]); % Save all variables
+       
+catch me
+    Screen('CloseAll')
+    ShowCursor;
+    % restore Screen preference settings.
+    Screen('Preference', 'VisualDebugLevel', oldLevel);
+    Screen('Preference', 'SuppressAllWarnings', oldEnableFlag);
+    rethrow(me);
+end
+
+%% Download EyeLink data file, shutdown EyeLink communication %%
+try
+    fprintf('Receiving data file ''%s''\n', edfFile);
+    status=Eyelink('ReceiveFile', edfFile, rawDataPathname, 1);
+    if status > 0
+        fprintf('ReceiveFile status %d\n ', status);
+    end
+    if 2 == exist(edfFile, 'file')
+        fprintf('Data file ''%s'' can be found in '' %s\n', edfFile, rawDataPathname);
+    end
+catch Me
+    fprintf('Problem receiving data file ''%s''\n', edfFile);
+    Eyelink('ShutDown');
+end
+
+Eyelink('ShutDown');  
