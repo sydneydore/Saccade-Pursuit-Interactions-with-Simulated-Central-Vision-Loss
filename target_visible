@@ -1,0 +1,59 @@
+function p = target_visible(Ex, Ey, Tx, Ty, sc)
+% Computes whether the target is visible (p=1) or not (p=0) for scotoma trials
+% Ex/y: x and y eye position (1 x N)
+% Tx/y: x and y target position (1 x N)
+% sc: 1 = control, 2 = scotoma trial
+
+% Ensure row vectors
+Ex = Ex(:)'; 
+Ey = Ey(:)';
+Tx = Tx(:)'; 
+Ty = Ty(:)'; 
+
+N = length(Ex);
+if sc == 2
+    % Scotoma parameters (in same units as Ex/Tx, e.g., degrees or pixels)
+    sr = 2.5; % scotoma radius
+    br = 1.5; % bite radius
+    be = 2.5; % bite eccentricity
+    bo = -135; % bite orientation (deg)
+    tr = 0.25; % target radius
+
+    % Bite center relative to scotoma
+    bcx = be * cosd(bo);
+    bcy = be * sind(bo);
+
+numPoints = 32;
+theta = linspace(0, 2*pi, numPoints); % 1 x numPoints
+
+% Make matrices of size numPoints x N
+Tx_mat = repmat(Tx, numPoints, 1);         % numPoints x N
+Ty_mat = repmat(Ty, numPoints, 1);         % numPoints x N
+theta_mat = repmat(theta', 1, length(Tx)); % numPoints x N
+
+% Target edges
+edgeX = Tx_mat + tr*cos(theta_mat); 
+edgeY = Ty_mat + tr*sin(theta_mat);
+
+% Eye positions repeated
+Ex_mat = repmat(Ex, numPoints, 1);
+Ey_mat = repmat(Ey, numPoints, 1);
+
+% Distances
+dist_cookie = sqrt((Ex_mat - edgeX).^2 + (Ey_mat - edgeY).^2);
+dist_bite   = sqrt((Ex_mat - (edgeX - bcx)).^2 + (Ey_mat - (edgeY - bcy)).^2);
+
+% Fully occluded edges
+fully_occluded_edges = (dist_cookie < sr) & ~(dist_bite < br);
+
+% Target visible if any edge not fully occluded
+p = any(~fully_occluded_edges, 1);
+
+
+
+else
+    % Control trials: always visible
+    p = true(1, N);
+end
+
+end
