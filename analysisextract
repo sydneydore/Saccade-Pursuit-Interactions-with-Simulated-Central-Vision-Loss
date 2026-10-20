@@ -1,0 +1,401 @@
+%------------- BEGIN CODE --------------
+param = NaN(N,93);
+%save([D{1}.filename],'D') %added this
+%savepath = '';
+%savepath = '';
+
+for i = 1:N,
+    % general info
+
+    param(i,1) = D{i}.trn; % trial number
+    param(i,2) = D{i}.good; % good or bad trial
+    param(i,3) = D{i}.cond; %condition
+
+    %% target parameters
+    %%% fix the second number once done
+    param(i,4) = D{i}.targ1mov; % ramp 1 onset [ms re. trial onset]
+    param(i,5) = D{i}.movementDirection(i,1); % ramp 1 motion direction x
+    param(i,6) = -D{i}.movementDirection(i,2);% ramp 1 motion direction y
+    param(i,7) = nanmean(D{i}.tarvv(D{i}.targ2mov - 1000: D{i}.targ2mov-300));% ramp 1 vel (deg / s) from target position
+    param(i,8) = D{i}.targ2mov - D{i}.targ1mov; % ramp 1 duration
+    param(i,9) = D{i}.tarposx(1);% ramp 1 initial target position x
+    param(i,10) = D{i}.tarposy(1);% ramp 1 initial target position x
+    param(i,11) = D{i}.targ2mov;% ramp 2 onset
+    param(i,12) = D{i}.movement2Direction(i,1); %ramp 2 motion direction x (same / opposite ramp 1)
+    param(i,13) = -D{i}.movement2Direction(i,2); %ramp 2 motion direction y (same / opposite ramp 1)
+    param(i,14) = nanmean(D{i}.tarvv(D{i}.targoff - 1000: D{i}.targoff-300));% ramp 2 vel (deg / s)
+    param(i,15) = D{i}.jump2dist(i); % ramp 2 step (deg)
+    param(i,16) = D{i}.targoff - D{i}.targ2mov; % ramp 2 duration
+
+    %% eye information
+    % find saccade right after the second step
+    indSacc = find(D{i}.saccs(:,1)>D{i}.targ2mov);
+    if ~isempty(indSacc)  
+    ind = indSacc(1);  % Default to indSacc(1)
+    if length(indSacc) >= 2
+    ind2 = indSacc(2); % Assign the second element if it exists
+        else
+    ind2 = NaN; % Assign NaN if the second element doesn't exist
+        end
+        param(i,17) = D{i}.visible(D{i}.saccs(ind,1) - 100); % target visible? (for scotoma) --> 1 = visible, 0 = not visible
+        if ~isnan(ind2)
+        param(i,18) = D{i}.visible(D{i}.saccs(ind2,1) - 100); %target visible for second saccade?
+        else
+        param(i,18) = NaN; 
+        end
+        param(i,19) = D{i}.visible(D{i}.targ2mov-5);%target vis at 5 ms before step? 
+    end
+    if isfield(D{i},'pursuitOn')
+
+        param(i,20)= D{i}.pursuitOn; %was pursonset;% pursuit onset time for ramp 1
+    end
+    if isfield(D{i},'pursuitACC')
+
+        param(i,21)= D{i}.pursuitACC; %was pursaccel;% acceleration of pursuit initiation for ramp 1
+    end
+
+    param(i,22)= D{i}.eyeX(nanmean(D{i}.targ1mov-25:D{i}.targ1mov+25)); % fixation position at ramp 1 onset time x position (average across50 ms window around this time)
+    param(i,23)= D{i}.eyeY(nanmean(D{i}.targ1mov-25:D{i}.targ1mov+25)); % fixation position at ramp 1 onset time y position (average across50 ms window around this time)
+
+    %saccs for each ramp
+    saccsramp1 = D{i}.saccs(D{i}.saccs(:,1)>D{i}.targ1mov & D{i}.saccs(:,2)<D{i}.targ2mov, :);%saccades ramp 1
+    saccsramp2 = D{i}.saccs(D{i}.saccs(:,1)>D{i}.targ2mov & D{i}.saccs(:,2)<D{i}.targoff, :);%saccades ramp 2
+
+    param(i,24)= length(saccsramp1(:,1));% number of saccades during ramp 1
+    param(i,25)= length(saccsramp2(:,1));% number of saccades during ramp 2
+
+    %sacc amps ramp 1
+    saccamps1 = sqrt((D{i}.eyeX(saccsramp1(:,2)) - D{i}.eyeX(saccsramp1(:,1))).^2 + (D{i}.eyeY(saccsramp1(:,2)) - D{i}.eyeY(saccsramp1(:,1))).^2) ;
+
+    param(i,26)=nanmean(saccamps1);% average saccade amplitude ramp 1 xy
+
+    %sacc amps ramp 2
+    saccamps2 = sqrt((D{i}.eyeX(saccsramp2(:,2)) - D{i}.eyeX(saccsramp2(:,1))).^2 + (D{i}.eyeY(saccsramp2(:,2)) - D{i}.eyeY(saccsramp2(:,1))).^2) ;
+
+    param(i,27)= nanmean(saccamps2);% average saccade amplitude ramp 2 xy
+
+
+ % Identify blink events in eye velocity and extend padding by 50 ms
+    eyeVvws_padded = D{i}.eyeVvws;
+    blink_times = find(isnan(eyeVvws_padded));  % Assuming NaNs represent blinks in the data
+    for blink_idx = blink_times'
+        % Set 50ms before and after the blink to NaN
+        blink_window_start = max(blink_idx - 50, 1);  % Ensure we don't go before the start of the data
+        blink_window_end = min(blink_idx + 50, length(eyeVvws_padded));  % Ensure we don't go past the end of the data
+        eyeVvws_padded(blink_window_start:blink_window_end) = NaN;
+    end
+
+    % Calculate steady-state eye velocities, excluding padded areas
+    param(i,28) = nanmean(eyeVvws_padded(D{i}.targ2mov - 750: D{i}.targ2mov-50)); % steady-state eye velocity ramp 1
+    param(i,29) = nanmean(eyeVvws_padded(D{i}.targoff - 1000: D{i}.targoff-300)); % steady-state eye velocity ramp 2
+
+
+    % param(i,26)= nanmean(D{i}.eyeVvws(D{i}.targ2mov - 750: D{i}.targ2mov-50));% steady-state eye velocity ramp 1 (1000ms -300 ms before end of ramp)
+    % param(i,27)= nanmean(D{i}.eyeVvws(D{i}.targoff - 1000: D{i}.targoff-300));% steady-state eye velocity ramp 2 (1000 - 300 ms window middle of ramp)
+
+    %ramp 1
+    cumsacc1 = nansum(abs(saccamps1));%cumulative sacc amp xy ramp 1
+    if isempty (cumsacc1),cumsacc1=0; end
+    cummotion1 = nansum(abs(D{i}.eyeX(D{i}.targ1mov:D{i}.targ2mov)));%cumulative motion in deg ramp 1 xy
+
+    %ramp2
+    cumsacc2 = nansum(abs(saccamps2));%cumulative sacc amp xy ramp 2
+    if isempty (cumsacc2), cumsacc2=0; end
+    cummotion2 = nansum(abs(D{i}.eyeX(D{i}.targ2mov:D{i}.targoff)));%cumulative motion in deg ramp 2 xy
+
+    param(i,30)= cumsacc1/(cummotion1+cumsacc1)*100;% percent saccade vs pursuit displacement ramp 1
+    param(i,31)= cumsacc2/(cummotion2+cumsacc2)*100;% percent saccade vs pursuit displacement ramp 2
+
+    % all catch-up saccade parameters (after step)
+    if ~isempty(indSacc)  
+        ind = indSacc(1);  %first sacc
+       if length(indSacc) >= 2
+        ind2 = indSacc(2); % Assign the second element if it exists
+        else
+        ind2 = NaN; % Assign NaN if the second element doesn't exist
+         end
+    
+        param(i,32)= D{i}.saccs(ind,1)- D{i}.targ2mov; %Reaction time wrt to second target step ms
+        param(i,33)= D{i}.saccs(ind,2) - D{i}.saccs(ind);%Duration of saccade to second target step, ms
+        param(i,34)= D{i}.eyeX(D{i}.saccs(ind,1)); %1st saccade initial x position deg
+        param(i,35)= D{i}.eyeY(D{i}.saccs(ind,1)); %1st saccade initial y position deg
+        param(i,36)= D{i}.eyeX(D{i}.saccs(ind,2)); %1st saccade end x position deg
+        param(i,37)= D{i}.eyeY(D{i}.saccs(ind,2)); %1st saccade end y position deg
+        param(i,38) = sqrt((D{i}.eyeX(D{i}.saccs(ind,2))-D{i}.eyeX(D{i}.saccs(ind,1))).^2 + (D{i}.eyeY(D{i}.saccs(ind,2))-D{i}.eyeY(D{i}.saccs(ind,1))).^2) ; %1st sacc amp xy
+        param(i,39) = D{i}.eyeX(D{i}.saccs(ind,1) - 100); %fixation 100ms before 1st saccade x
+        param(i,40) = D{i}.eyeY(D{i}.saccs(ind,1) - 100);%fixation 100ms before 1st saccade y
+        param(i,41) = (D{i}.tarposx3(D{i}.saccs(ind,1) - 100))-(D{i}.eyeX(D{i}.saccs(ind,1) - 100));%PE 100 ms before saccade to 2nd target step x
+        param(i,42) = (D{i}.tarposy3(D{i}.saccs(ind,1) - 100))-(D{i}.eyeY(D{i}.saccs(ind,1) - 100));%PE 100 ms before saccade to 2nd target step y
+
+
+        %PE magnitude and direction
+
+        deltaxpe = (D{i}.tarposx3(D{i}.saccs(ind,1) - 100)-D{i}.eyeX(D{i}.saccs(ind,1)-100));
+        deltaype = (D{i}.tarposy3(D{i}.saccs(ind,1)-100)-D{i}.eyeY(D{i}.saccs(ind,1)-100));
+
+        PE = [deltaxpe, deltaype];
+        magpe = norm(PE);
+
+       
+        directionpe = atan2d(deltaype, deltaxpe);
+        D{i}.PE100 = [magpe, directionpe];
+
+
+        param(i,43) = magpe;%PE 100 ms before saccade to 2nd target step magnitude
+        param(i,44) = directionpe;  %PE100 direction in degrees
+        %50 ms interval
+        s = D{i}.saccs(ind,1)-125;
+        e = D{i}.saccs(ind,1)-75;
+        param(i,45) = nanmean(D{i}.tarxv(s:e)) - nanmean(D{i}.eyeXv(s:e));%Retinal slip over 50ms interval centered 100ms before sacc onset x
+        param(i,46) = nanmean(D{i}.taryv(s:e)) - nanmean(D{i}.eyeYv(s:e));%Retinal slip over 50ms interval centered 100ms before sacc onset y
+
+
+        %RS magnitude and direction
+
+        deltaxrs = nanmean(D{i}.tarxv(s:e)) - nanmean(D{i}.eyeXv(s:e));
+        deltayrs = nanmean(D{i}.taryv(s:e)) - nanmean(D{i}.eyeYv(s:e));
+        RS = [deltaxrs, deltayrs];
+        magrs = norm(RS);
+        directionrs = atan2d(deltayrs, deltaxrs);
+        D{i}.RS100 = [magrs, directionrs];
+
+        param(i,47) = magrs;%RS 100 ms before saccade to 2nd target step magnitude
+        param(i,48) = directionrs;  %RS100 direction in degrees
+
+        param(i,49) = D{i}.tarposx3(D{i}.saccs(ind,1)) - D{i}.eyeX(D{i}.saccs(ind,1)); %PE beginning of sacc x
+        param(i,50) = D{i}.tarposy3(D{i}.saccs(ind,1)) - D{i}.eyeY(D{i}.saccs(ind,1));%PE beginning of sacc y
+        param(i,51) = sqrt((D{i}.tarposx3(D{i}.saccs(ind,1))-D{i}.eyeX(D{i}.saccs(ind,1))).^2 + (D{i}.tarposy3(D{i}.saccs(ind,1))-D{i}.eyeY(D{i}.saccs(ind,1))).^2) ; %pe beginning of sacc XY
+        param(i,52) = D{i}.tarposx3(D{i}.saccs(ind,2)) - D{i}.eyeX(D{i}.saccs(ind,2));%PE end of sacc x (accuracy)
+        param(i,53) = D{i}.tarposy3(D{i}.saccs(ind,2)) - D{i}.eyeY(D{i}.saccs(ind,2)); %PE end of sacc y (accuracy)
+        param(i,54) = sqrt((D{i}.tarposx3(D{i}.saccs(ind,2))-D{i}.eyeX(D{i}.saccs(ind,2))).^2 + (D{i}.tarposy3(D{i}.saccs(ind,2))-D{i}.eyeY(D{i}.saccs(ind,2))).^2) ; %pe end sacc XY (accuracy)
+        param(i,55) = D{i}.tarposx3(D{i}.targ2mov) - D{i}.eyeX(D{i}.targ2mov);%PE at target step x
+        param(i,56) = D{i}.tarposy3(D{i}.targ2mov) - D{i}.eyeY(D{i}.targ2mov);%PE at target step y
+        param(i,57) = sqrt((D{i}.tarposx3(D{i}.targ2mov) - D{i}.eyeX(D{i}.targ2mov)).^2 + (D{i}.tarposy3(D{i}.targ2mov) - D{i}.eyeY(D{i}.targ2mov)).^2) ;%pe at tstep xy
+
+
+        %second sacc
+        if ~isnan(ind2)
+
+        param(i,58)= D{i}.saccs(ind2,1)- D{i}.targ2mov; %Reaction time wrt to second target step ms
+        param(i,59)= D{i}.saccs(ind2,2) - D{i}.saccs(ind);%Duration of saccade to second target step, ms
+        param(i,60)= D{i}.eyeX(D{i}.saccs(ind2,1)); %1st saccade initial x position deg
+        param(i,61)= D{i}.eyeY(D{i}.saccs(ind2,1)); %1st saccade initial y position deg
+        param(i,62)= D{i}.eyeX(D{i}.saccs(ind2,2)); %1st saccade end x position deg
+        param(i,63)= D{i}.eyeY(D{i}.saccs(ind2,2)); %1st saccade end y position deg
+        param(i,64) = sqrt((D{i}.eyeX(D{i}.saccs(ind2,2))-D{i}.eyeX(D{i}.saccs(ind2,1))).^2 + (D{i}.eyeY(D{i}.saccs(ind2,2))-D{i}.eyeY(D{i}.saccs(ind2,1))).^2) ; %2nd sacc amp xy
+        param(i,65) = D{i}.eyeX(D{i}.saccs(ind2,1) - 100); %fixation 100ms before 1st saccade x
+        param(i,66) = D{i}.eyeY(D{i}.saccs(ind2,1) - 100);%fixation 100ms before 1st saccade y
+        param(i,67) = (D{i}.tarposx3(D{i}.saccs(ind2,1) - 100))-(D{i}.eyeX(D{i}.saccs(ind2,1) - 100));%PE 100 ms before saccade to 2nd target step x
+        param(i,68) = (D{i}.tarposy3(D{i}.saccs(ind2,1) - 100))-(D{i}.eyeY(D{i}.saccs(ind2,1) - 100));%PE 100 ms before saccade to 2nd target step y
+
+
+        %PE magnitude and direction
+
+        deltaxpe2 = (D{i}.tarposx3(D{i}.saccs(ind2,1) - 100)-D{i}.eyeX(D{i}.saccs(ind2,1)-100));
+        deltaype2 = (D{i}.tarposy3(D{i}.saccs(ind2,1)-100)-D{i}.eyeY(D{i}.saccs(ind2,1)-100));
+
+        PE2 = [deltaxpe2, deltaype2];
+        magpe2 = norm(PE2);
+
+       
+        directionpe2 = atan2d(deltaype2, deltaxpe2);
+        D{i}.PE1002 = [magpe2, directionpe2];
+
+
+        param(i,69) = magpe2;%PE 100 ms before saccade to 2nd target step magnitude
+        param(i,70) = directionpe2;  %PE100 direction in degrees
+        %50 ms interval
+        s2 = D{i}.saccs(ind2,1)-125;
+        e2 = D{i}.saccs(ind2,1)-75;
+        param(i,71) = nanmean(D{i}.tarxv(s2:e2)) - nanmean(D{i}.eyeXv(s2:e2));%Retinal slip over 50ms interval centered 100ms before sacc onset x
+        param(i,72) = nanmean(D{i}.taryv(s2:e2)) - nanmean(D{i}.eyeYv(s2:e2));%Retinal slip over 50ms interval centered 100ms before sacc onset y
+
+
+        %RS magnitude and direction
+
+        deltaxrs2 = nanmean(D{i}.tarxv(s2:e2)) - nanmean(D{i}.eyeXv(s2:e2));
+        deltayrs2 = nanmean(D{i}.taryv(s2:e2)) - nanmean(D{i}.eyeYv(s2:e2));
+        RS2 = [deltaxrs2, deltayrs2];
+        magrs2 = norm(RS2);
+        directionrs2 = atan2d(deltayrs2, deltaxrs2);
+        D{i}.RS1002 = [magrs2, directionrs2];
+
+        param(i,73) = magrs2;%RS 100 ms before saccade to 2nd target step magnitude
+        param(i,74) = directionrs2;  %RS100 direction in degrees
+
+        param(i,75) = D{i}.tarposx3(D{i}.saccs(ind2,1)) - D{i}.eyeX(D{i}.saccs(ind2,1)); %PE beginning of sacc x
+        param(i,76) = D{i}.tarposy3(D{i}.saccs(ind2,1)) - D{i}.eyeY(D{i}.saccs(ind2,1));%PE beginning of sacc y
+        param(i,77) = sqrt((D{i}.tarposx3(D{i}.saccs(ind2,1))-D{i}.eyeX(D{i}.saccs(ind2,1))).^2 + (D{i}.tarposy3(D{i}.saccs(ind2,1))-D{i}.eyeY(D{i}.saccs(ind2,1))).^2) ; %pe beginning of sacc XY
+        param(i,78) = D{i}.tarposx3(D{i}.saccs(ind2,2)) - D{i}.eyeX(D{i}.saccs(ind2,2));%PE end of sacc x (accuracy)
+        param(i,79) = D{i}.tarposy3(D{i}.saccs(ind2,2)) - D{i}.eyeY(D{i}.saccs(ind2,2)); %PE end of sacc y (accuracy)
+        param(i,80) = sqrt((D{i}.tarposx3(D{i}.saccs(ind2,2))-D{i}.eyeX(D{i}.saccs(ind2,2))).^2 + (D{i}.tarposy3(D{i}.saccs(ind2,2))-D{i}.eyeY(D{i}.saccs(ind2,2))).^2) ; %pe end sacc XY (accuracy)
+        else
+        param(i,58)= NaN;
+        param(i,59)= NaN;
+        param(i,60)= NaN;
+        param(i,61)= NaN;
+        param(i,62)= NaN;
+        param(i,63)= NaN;
+        param(i,64) = NaN;
+        param(i,65) = NaN;
+        param(i,66) = NaN;
+        param(i,67) = NaN;
+        param(i,68) = NaN;
+        param(i,69) = NaN;
+        param(i,70) = NaN;
+        param(i,71) = NaN;
+        param(i,73) = NaN;
+        param(i,74) = NaN;
+        param(i,75) = NaN;
+        param(i,76) = NaN;
+        param(i,77) = NaN;
+        param(i,78) = NaN;
+        param(i,79) = NaN;
+        param(i,80) = NaN;
+        end
+        %other stuff
+        param(i,81) = sum(D{i}.visible)/D{i}.trialend; %proportion of time that target is visible
+        param(i,82) = D{i}.double; 
+        param(i,83) = nanmean(D{i}.tarxv(D{i}.targ2mov - 1000: D{i}.targ2mov-300));% ramp 1 x vel (deg / s) from target position
+        param(i,84) = nanmean(D{i}.taryv(D{i}.targ2mov - 1000: D{i}.targ2mov-300));% ramp 1 y vel (deg / s) from target position
+        param(i,85) = nanmean(D{i}.tarxv(D{i}.targoff - 1000: D{i}.targoff-300));% ramp 2 x vel (deg / s)
+        param(i,86) = nanmean(D{i}.taryv(D{i}.targoff - 1000: D{i}.targoff-300));% ramp 2 y vel (deg / s)
+        
+        % Latency (conditioned on 90ms)
+        latency = D{i}.saccs(indSacc(1),1)- D{i}.targ2mov; % calculate latency for first sacc
+        if latency < 90
+            param(i,87) = 1; % insert calculation or value for latency < 90ms, remove these only for latency analysis
+        else
+            param(i,87) = 0; % insert calculation or value for latency >= 90ms
+        end
+            
+    % Comparing motion direction
+        if sign(param(i,5)) == sign(param(i,12)) && sign(param(i,6)) == sign(param(i,13))
+            param(i,88) = 1; % Same direction
+        else
+            param(i,88) = 0; % Opposite direction
+        end
+        
+     % Compute marker for whether ramp 2 velocity is larger than ramp 1 velocity
+       % Compute marker for whether ramp 2 velocity is larger than ramp 1 velocity
+        if ~isnan(param(i,7)) && ~isnan(param(i,14)) % Ensure neither value is NaN
+            if param(i,14) > param(i,7)
+                param(i,89) = 1; % Ramp 2 velocity is larger
+            else
+                param(i,89) = 0; % Ramp 2 velocity is not larger
+            end
+        else
+            param(i,89) = NaN; % Set marker to NaN if either velocity is NaN
+        end
+
+
+        %marker for checking direction
+dt = 1 / D{i}.sfr; % Time interval between samples (in seconds)
+
+% Define start and end times for Ramp 1
+start_time_ramp1 = D{i}.targ2mov - 1000;  % Start time of Ramp 1
+end_time_ramp1 = D{i}.targ2mov - 25;     % End time of Ramp 1 (just before the jump)
+
+% Define start and end times for Ramp 2
+start_time_ramp2 = D{i}.targ2mov + 1;     % Start time of Ramp 2 (at the jump)
+end_time_ramp2 = D{i}.targoff;           % End time of Ramp 2
+
+% Define time points and target positions for Ramp 1
+ramp1_times = start_time_ramp1:end_time_ramp1;
+ramp1_positions_x = D{i}.tarposx3(start_time_ramp1:end_time_ramp1);
+ramp1_positions_y = D{i}.tarposy3(start_time_ramp1:end_time_ramp1);
+
+% Define threshold for ambiguity
+ambiguity_threshold = 3; % in degrees
+
+if isempty(indSacc)
+    % Handle cases with no saccades
+   %disp('No saccades found');
+    sacc1_flag = NaN;
+    sacc2_flag = NaN;
+else
+    % Process the first saccade
+    sacc1_time = D{i}.saccs(indSacc(1), 2); % Endpoint time of first saccade
+    pred_x_ramp1_sacc1 = interp1(ramp1_times, ramp1_positions_x, sacc1_time, 'linear', 'extrap');
+    pred_y_ramp1_sacc1 = interp1(ramp1_times, ramp1_positions_y, sacc1_time, 'linear', 'extrap');
+    dist_ramp1_sacc1 = sqrt((pred_x_ramp1_sacc1 - D{i}.eyeX(sacc1_time))^2 + ...
+                            (pred_y_ramp1_sacc1 - D{i}.eyeY(sacc1_time))^2);
+
+    if sacc1_time >= start_time_ramp2 && sacc1_time <= end_time_ramp2
+        actual_x_ramp2_sacc1 = D{i}.tarposx3(sacc1_time);
+        actual_y_ramp2_sacc1 = D{i}.tarposy3(sacc1_time);
+        dist_ramp2_sacc1 = sqrt((actual_x_ramp2_sacc1 - D{i}.eyeX(sacc1_time))^2 + ...
+                                (actual_y_ramp2_sacc1 - D{i}.eyeY(sacc1_time))^2);
+    else
+        dist_ramp2_sacc1 = Inf;
+    end
+
+    % Assign flag for the first saccade
+    if abs(dist_ramp1_sacc1 - dist_ramp2_sacc1) > ambiguity_threshold
+        sacc1_flag = dist_ramp1_sacc1 < dist_ramp2_sacc1; % 1 if closer to Ramp 1, 0 if closer to Ramp 2
+    else
+        sacc1_flag = 0; % Ambiguous
+    end
+
+    % Process the second saccade if available
+    if length(indSacc) >= 2
+        sacc2_time = D{i}.saccs(indSacc(2), 2); % Endpoint time of second saccade
+        pred_x_ramp1_sacc2 = interp1(ramp1_times, ramp1_positions_x, sacc2_time, 'linear', 'extrap');
+        pred_y_ramp1_sacc2 = interp1(ramp1_times, ramp1_positions_y, sacc2_time, 'linear', 'extrap');
+        dist_ramp1_sacc2 = sqrt((pred_x_ramp1_sacc2 - D{i}.eyeX(sacc2_time))^2 + ...
+                                (pred_y_ramp1_sacc2 - D{i}.eyeY(sacc2_time))^2);
+
+        if sacc2_time >= start_time_ramp2 && sacc2_time <= end_time_ramp2
+            actual_x_ramp2_sacc2 = D{i}.tarposx3(sacc2_time);
+            actual_y_ramp2_sacc2 = D{i}.tarposy3(sacc2_time);
+            dist_ramp2_sacc2 = sqrt((actual_x_ramp2_sacc2 - D{i}.eyeX(sacc2_time))^2 + ...
+                                    (actual_y_ramp2_sacc2 - D{i}.eyeY(sacc2_time))^2);
+        else
+            dist_ramp2_sacc2 = Inf;
+        end
+
+        % Assign flag for the second saccade
+        if abs(dist_ramp1_sacc2 - dist_ramp2_sacc2) > ambiguity_threshold
+            sacc2_flag = dist_ramp1_sacc2 < dist_ramp2_sacc2; % 1 if closer to Ramp 1, 0 if closer to Ramp 2
+        else
+            sacc2_flag = 0; % Ambiguous
+        end
+    else
+        % Handle case with only one saccade
+        %disp('Only one saccade found');
+        sacc2_flag = NaN;
+    end
+end
+
+% Store the flags in the param matrix
+param(i,90) = sacc1_flag; %1 for ramp 1, 0 for ramp 2
+param(i,91) = sacc2_flag; %1 for ramp 1, 0 for ramp 2
+param(i,92) = nansum(D{i}.visible(D{i}.targ2mov-100:D{i}.targ2mov-1)); %full or partial visibility?
+param(i,93) = D{i}.visible(D{i}.targ2mov+5); %tvis 5 ms after step
+
+
+
+    end
+
+end
+
+
+
+
+
+
+
+%% save results
+%save([pathstr filename(1:12) '.mat'], 'D', 'N','param', '-append')
+%cd(savepath)
+%save([D{1}.filename(1:end-4), '.mat'], 'D', 'N', 'param', '-append')
+D{1}.filename
+save([D{1}.filename(1:end-4), 'output.mat'], 'D', 'N', 'param')
+save([D{1}.filename(1:end-4) 'output.txt'], 'param', '-ascii', '-tabs')
+msgbox('Data has been successfully saved!','Good job')
+disp(['There are ', num2str(sum(param(:,2))), ' bad trials'])
+
+close all;
+clear all;
+%cd('/Users/Sydney/Desktop/Scotoma/experiment/Rawdata')
+Analysis Interface;
